@@ -30,10 +30,10 @@ def train_slms(model_paths, device="cuda", CMLPPath=None):
 
     # 1. Load
     tasks = [
-        ("google/boolq", "train[:1000]"),
+        ("google/boolq", "train[:2000]"),
         ("smoorsmith/prontoqa", "train[:500]"), 
-        ("skrishna/coin_flip", "train[:1000]"),
-        ("tasksource/proofwriter", "train[:1000]") 
+        ("skrishna/coin_flip", "train[:2000]"),
+        ("tasksource/proofwriter", "train[:2000]") 
     ]
     
     full_data_list = []
@@ -51,7 +51,7 @@ def train_slms(model_paths, device="cuda", CMLPPath=None):
     for path in model_paths:
         slm = SLMWrapper(model_path=path, device=device)
         
-        slm.train_cmlp(master_dataloader, epochs=3, lr=5e-5)
+        slm.train_cmlp(master_dataloader, epochs=5, lr=5e-5)
 
         model_name_clean = path.replace("/", "_").replace("\\", "_")
         save_file = os.path.join(CMLPPath, f"{model_name_clean}_cmlp.pt")
