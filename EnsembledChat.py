@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer
 from SLMWrapper import SLMWrapper
 from pathlib import Path
+import sys
 
 class EnsembleChatBot:
     def __init__(self, model_paths, cmlp_dir, device="cuda"):
@@ -32,56 +33,60 @@ class EnsembleChatBot:
             
             self.wrappers.append(slm)
 
-    def chat(self, user_input, max_new_tokens=100, temperature=0.7):
-        """
-        Generates a response using token-level ensemble weighting.
-        """
-        # Prepare context (simple format for now)
-        input_text = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        input_ids = self.tokenizer.encode(input_text, return_tensors="pt").to(self.device)
+    def chat_stream(self, user_input, max_new_tokens=150, temperature=0.7):
+        prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
         
         generated = input_ids
+        
+        # Keep track of what we've already printed to decode only the new parts
+        decoded_idx = input_ids.shape[-1]
 
         for _ in range(max_new_tokens):
             all_probs = []
             all_confidences = []
 
-            # Step 1: Collect Logits and Confidence from every model
             for slm in self.wrappers:
                 with torch.no_grad():
                     outputs = slm.slm(generated, output_hidden_states=True, return_dict=True)
                     logits = outputs.logits[:, -1, :] / temperature
                     
+                    # CMLP Feature Extraction
                     hiddens = torch.cat(
                         [lyr[:, -1, :] for lyr in outputs.hidden_states[-slm.num_layers:]], 
                         dim=-1
                     )
-
                     probs = torch.softmax(logits, dim=-1)
                     max_prob = probs.max(dim=-1, keepdim=True)[0]
-
+                    
                     feature_vector = torch.cat([hiddens, max_prob], dim=-1).to(torch.bfloat16)
-
-                    conf = slm.cmlp(feature_vector) # Shape: [1, 1]
+                    
+                    # Get weighted confidence
+                    conf = slm.cmlp(feature_vector)
                     
                     all_probs.append(probs)
                     all_confidences.append(conf)
 
-            stacked_probs = torch.cat(all_probs, dim=0)
-            stacked_conf = torch.stack(all_confidences).unsqueeze(-1) 
+            # --- Integration logic ---
+            stacked_probs = torch.cat(all_probs, dim=0) 
+            stacked_conf = torch.cat(all_confidences, dim=0)
             
             weights = F.softmax(stacked_conf, dim=0)
-            
-            final_probs = torch.sum(stacked_probs * weights, dim=0, keepdim=True)
+            final_probs = torch.sum(stacked_probs * weights, dim=0).unsqueeze(0)
 
-            next_token = torch.multinomial(final_probs, num_samples=1)
+            next_token = torch.multinomial(final_probs.float(), num_samples=1)
             generated = torch.cat([generated, next_token], dim=-1)
+
+            # Decode the new token immediately
+            new_text = self.tokenizer.decode(generated[0][decoded_idx:], skip_special_tokens=True)
+            
+            # If the token produced actual text (not just metadata), yield it
+            if new_text:
+                yield new_text
+                decoded_idx = generated.shape[-1] # Advance the window
 
             if next_token.item() == self.tokenizer.eos_token_id:
                 break
-
-        response = self.tokenizer.decode(generated[0][input_ids.shape[-1]:], skip_special_tokens=True)
-        return response
 
 # --- Main Interaction Loop ---
 
@@ -103,9 +108,14 @@ if __name__ == "__main__":
 
     print("\n--- Ensemble Bot Ready! (Type 'exit' to quit) ---")
     while True:
-        user_msg = input("You: ")
-        if user_msg.lower() in ["exit", "quit"]:
-            break
+        text = input("User: ")
+        if text.lower() in ["quit", "exit"]: break
+        
+        print("Ensemble: ", end="")
+        
+        # Iterate over the generator to print tokens in real-time
+        for token_text in bot.chat_stream(text):
+            print(token_text, end="")
+            sys.stdout.flush() # Force print to terminal immediately
             
-        reply = bot.chat(user_msg)
-        print(f"\nEnsemble: {reply}\n")
+        print("\n")
