@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 class SLMWrapper(nn.Module):
     def __init__(self, model_path, device="cuda"):
@@ -9,6 +9,11 @@ class SLMWrapper(nn.Module):
         self.device = device
         self.model_path = model_path
         
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+        self.true_id = tokenizer.encode("True", add_special_tokens=False)[-1]
+        self.false_id = tokenizer.encode("False", add_special_tokens=False)[-1]
+
         self.slm = AutoModelForCausalLM.from_pretrained(
             model_path, 
             dtype=torch.bfloat16, 
@@ -42,6 +47,17 @@ class SLMWrapper(nn.Module):
             self.cmlp.eval() 
         else:
             raise FileNotFoundError(f"No CMLP weights found at {path}")
+    def get_binary_prediction(self, logits):
+
+        binary_logits = logits[:, [self.true_id, self.false_id]]
+        
+        probs = torch.softmax(binary_logits, dim=-1)
+        max_prob, local_idx = probs.max(dim=-1)
+
+        # Map local 0/1 back to global True/False IDs
+        pred_token_ids = torch.where(local_idx == 0, self.true_id, self.false_id)
+        
+        return max_prob, pred_token_ids
 
     def predict(self, input_ids, attention_mask=None):
         outputs = self.slm(
@@ -77,14 +93,14 @@ class SLMWrapper(nn.Module):
                 with torch.no_grad():
                     out = self.slm(input_ids, output_hidden_states=True)
                     hiddens = torch.cat([lyr[:, -1, :] for lyr in out.hidden_states[-self.num_layers:]], dim=-1)
-                    probs = torch.softmax(out.logits[:, -1, :], dim=-1)
-                    max_prob, preds = probs.max(dim=-1)
+                    max_prob, preds = self.get_binary_prediction(out.logits[:, -1, :])
                     target = (preds == labels).float().unsqueeze(-1)
                 
                 optimizer.zero_grad()
-                pred_conf = self.cmlp(torch.cat([hiddens, max_prob.unsqueeze(-1)], dim=-1))
-                target = target.to(pred_conf.dtype)
-                loss = criterion(pred_conf, target)
+                feat = torch.cat([hiddens, max_prob.unsqueeze(-1)], dim=-1).to(torch.bfloat16)
+                pred_conf = self.cmlp(feat)
+                
+                loss = criterion(pred_conf, target.to(pred_conf.dtype))
                 loss.backward()
                 optimizer.step()
                 

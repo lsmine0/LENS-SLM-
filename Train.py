@@ -30,11 +30,10 @@ def train_slms(model_paths, device="cuda", CMLPPath=None):
 
     # 1. Load
     tasks = [
-        ("google/boolq", "train[:500]"),
-        ("regisss/math_qa", "train[:500]"),
+        ("google/boolq", "train[:1000]"),
         ("smoorsmith/prontoqa", "train[:500]"), 
-        ("skrishna/coin_flip", "train[:400]"),
-        ("tasksource/proofwriter", "train[:400]") 
+        ("skrishna/coin_flip", "train[:1000]"),
+        ("tasksource/proofwriter", "train[:1000]") 
     ]
     
     full_data_list = []

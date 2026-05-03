@@ -23,23 +23,19 @@ def prepare_lens_data(tokenizer, dataset_name="boolq", split="train[:1000]"):
         prompt, target = "", None
            
         if dataset_name == "google/boolq":
-            prompt = f"Question: {item['question']} \nAnswer (True/False):"
+            prompt = f"Question: {item['question']} \nTrue or false? Answer:"
             target = "True" if item['answer'] is True else "False" # 'True' or 'False'
             
-        elif dataset_name == "regisss/math_qa":
-            prompt = f"Problem: {item['Problem']}\nOptions: {item['options']}\n Answer:"
-            target = item['correct'] # Usually 'a', 'b', 'c', 'd'
-            
         elif dataset_name == "smoorsmith/prontoqa":
-            prompt = f"Context: {item['context']}\nQuestion: {item['question']}\nOptions: {item['options']}\nAnswer:"
+            prompt = f"Context: {item['context']}\nQuestion: {item['question']}\nTrue or false? Answer:"
             target = "True" if item['answer'] is True else "False" # 'True' or 'False'
             
         elif dataset_name == "skrishna/coin_flip":
-            prompt = f"{item['inputs']}\nAnswer: "
-            target = item['targets'] # 'yes' or 'no'
+            prompt = f"{item['inputs']}\nTrue or false? Answer:"
+            target =  "True" if item['targets'] == "yes" else "False" # 'True' or 'False'
             
         elif dataset_name == "tasksource/proofwriter":
-            prompt = f"Theory: {item['theory']}\nQuestion: {item['question']}\nAnswer:"
+            prompt = f"Theory: {item['theory']}\nQuestion: {item['question']}\nTrue or false? Answer:"
             target = "True" if item['answer'] is True else "False" # 'True' or 'False'
 
         # Tokenization Logic
