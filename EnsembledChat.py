@@ -33,7 +33,7 @@ class EnsembleChatBot:
             
             self.wrappers.append(slm)
 
-    def chat_stream(self, user_input, max_new_tokens=150, temperature=0.7):
+    def chat_stream(self, user_input, max_new_tokens=4000, temperature=0.7):
         prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{user_input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
         
